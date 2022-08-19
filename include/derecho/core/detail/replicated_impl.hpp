@@ -119,7 +119,7 @@ auto Replicated<T>::p2p_send(node_id_t dest_node, Args&&... args) const {
                 },
                 std::forward<Args>(args)...);
         group_rpc_manager.send_p2p_message(dest_node, subgroup_id, message_seq_num, return_pair.pending);
-        std::cout << "BLAAAA AQUIIIIIIII HAHAHA" << std::endl;
+        std::cerr << "CALL1" << std::endl;
         return std::move(*return_pair.results);
     } else {
         throw empty_reference_exception{"Attempted to use an empty Replicated<T>"};
@@ -336,6 +336,7 @@ auto PeerCaller<T>::p2p_send(node_id_t dest_node, Args&&... args) {
                 },
                 std::forward<Args>(args)...);
         group_rpc_manager.send_p2p_message(dest_node, subgroup_id, message_seq_num, return_pair.pending);
+        std::cerr << "CALL2" << std::endl;
         return std::move(*return_pair.results);
     } else {
         throw empty_reference_exception{"Attempted to use an empty Replicated<T>"};
@@ -380,6 +381,7 @@ auto ExternalClientCallback<T>::p2p_send(node_id_t dest_node, Args&&... args) {
                 },
                 std::forward<Args>(args)...);
         group_rpc_manager.send_p2p_message(dest_node, subgroup_id, message_seq_num, return_pair.pending);
+        std::cerr << "CALL3" << std::endl;
         return std::move(*return_pair.results);
     } else {
         throw empty_reference_exception{"Attempted to use an empty Replicated<T>"};
@@ -396,6 +398,7 @@ auto ShardIterator<T>::p2p_send(Args&&... args) {
     for(uint i = 1; i < shard_reps.size(); ++i) {
         send_result_vec.emplace_back(caller.template p2p_send<tag>(shard_reps[i], std::forward<Args>(args)...));
     }
+    std::cerr << "CALL4" << std::endl;
     return send_result_vec;
 }
 
