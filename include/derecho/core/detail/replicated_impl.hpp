@@ -94,8 +94,7 @@ Replicated<T>::~Replicated() {
     }
 }
 
-static std::chrono::high_resolution_clock::time_point print_time(auto
-&key,std::chrono::high_resolution_clock::time_point &start,const char *tag){
+static std::chrono::high_resolution_clock::time_point print_time(std::chrono::high_resolution_clock::time_point &start,const char *tag){
     auto elapsed = std::chrono::high_resolution_clock::now() - start;
     auto latency = std::chrono::duration_cast<std::chrono::microseconds>(elapsed);
     std::cerr << tag << " " << latency.count() << std::endl;
