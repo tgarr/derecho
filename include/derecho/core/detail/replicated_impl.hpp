@@ -8,6 +8,7 @@
 #include <functional>
 #include <mutex>
 #include <utility>
+#include <chrono>
 
 namespace derecho {
 
@@ -93,10 +94,19 @@ Replicated<T>::~Replicated() {
     }
 }
 
+static std::chrono::high_resolution_clock::time_point print_time(auto
+&key,std::chrono::high_resolution_clock::time_point &start,const char *tag){
+    auto elapsed = std::chrono::high_resolution_clock::now() - start;
+    auto latency = std::chrono::duration_cast<std::chrono::microseconds>(elapsed);
+    std::cerr << tag << " " << latency.count() << std::endl;
+    return std::chrono::high_resolution_clock::now();
+}
+
 template <typename T>
 template <rpc::FunctionTag tag, typename... Args>
 auto Replicated<T>::p2p_send(node_id_t dest_node, Args&&... args) const {
     if(is_valid()) {
+        auto start = std::chrono::high_resolution_clock::now();
         if(group_rpc_manager.view_manager.get_current_view().get().rank_of(dest_node) == -1) {
             throw invalid_node_exception("Cannot send a p2p request to node "
                                          + std::to_string(dest_node) + ": it is not a member of the Group.");
@@ -118,9 +128,12 @@ auto Replicated<T>::p2p_send(node_id_t dest_node, Args&&... args) const {
                     }
                 },
                 std::forward<Args>(args)...);
+        start = print_time("FIRST",start);
         group_rpc_manager.send_p2p_message(dest_node, subgroup_id, message_seq_num, return_pair.pending);
-        std::cerr << "CALL1" << std::endl;
-        return std::move(*return_pair.results);
+        start = print_time("SECOND",start);
+        auto ret = std::move(*return_pair.results);
+        start = print_time("THIRD",start);
+        return ret;
     } else {
         throw empty_reference_exception{"Attempted to use an empty Replicated<T>"};
     }
@@ -336,7 +349,6 @@ auto PeerCaller<T>::p2p_send(node_id_t dest_node, Args&&... args) {
                 },
                 std::forward<Args>(args)...);
         group_rpc_manager.send_p2p_message(dest_node, subgroup_id, message_seq_num, return_pair.pending);
-        std::cerr << "CALL2" << std::endl;
         return std::move(*return_pair.results);
     } else {
         throw empty_reference_exception{"Attempted to use an empty Replicated<T>"};
@@ -381,7 +393,6 @@ auto ExternalClientCallback<T>::p2p_send(node_id_t dest_node, Args&&... args) {
                 },
                 std::forward<Args>(args)...);
         group_rpc_manager.send_p2p_message(dest_node, subgroup_id, message_seq_num, return_pair.pending);
-        std::cerr << "CALL3" << std::endl;
         return std::move(*return_pair.results);
     } else {
         throw empty_reference_exception{"Attempted to use an empty Replicated<T>"};
@@ -398,7 +409,6 @@ auto ShardIterator<T>::p2p_send(Args&&... args) {
     for(uint i = 1; i < shard_reps.size(); ++i) {
         send_result_vec.emplace_back(caller.template p2p_send<tag>(shard_reps[i], std::forward<Args>(args)...));
     }
-    std::cerr << "CALL4" << std::endl;
     return send_result_vec;
 }
 
