@@ -29,7 +29,10 @@ std::ostream& operator<<(std::ostream& os, MESSAGE_TYPE mt) {
 P2PConnection::P2PConnection(uint32_t my_node_id, uint32_t remote_id, uint64_t p2p_buf_size, const ConnectionParams& connection_params)
         : my_node_id(my_node_id), remote_id(remote_id), connection_params(connection_params) {
     incoming_p2p_buffer = std::make_unique<volatile uint8_t[]>(p2p_buf_size);
-    outgoing_p2p_buffer = std::make_unique<volatile uint8_t[]>(p2p_buf_size);
+    if(my_node_id != remote_id)
+        outgoing_p2p_buffer = std::make_unique<volatile uint8_t[]>(p2p_buf_size);
+    else
+        outgoing_p2p_buffer = incoming_p2p_buffer;
 
     for(auto type : p2p_message_types) {
         incoming_seq_nums_map.try_emplace(type, 0);
@@ -47,11 +50,6 @@ P2PConnection::P2PConnection(uint32_t my_node_id, uint32_t remote_id, uint64_t p
                                           p2p_buf_size, p2p_buf_size, my_node_id > remote_id);
 #endif
     } 
-    else {
-        res = std::make_unique<resources>(remote_id, const_cast<uint8_t*>(incoming_p2p_buffer.get()),
-                                          const_cast<uint8_t*>(outgoing_p2p_buffer.get()),
-                                          p2p_buf_size, p2p_buf_size,true);
-    }
 }
 
 resources* P2PConnection::get_res() {
@@ -112,15 +110,15 @@ std::chrono::high_resolution_clock::time_point print_time(std::chrono::         
 
 void P2PConnection::send(MESSAGE_TYPE type, uint64_t sequence_num) {
     auto start = std::chrono::high_resolution_clock::now();
-    //if(remote_id == my_node_id) {
-    if(false){
+    if(remote_id == my_node_id) {
         // there's no reason why memcpy shouldn't also copy guard and data separately
-        std::memcpy(const_cast<uint8_t*>(incoming_p2p_buffer.get()) + getOffsetBuf(type, sequence_num),
+        /*std::memcpy(const_cast<uint8_t*>(incoming_p2p_buffer.get()) + getOffsetBuf(type, sequence_num),
                     const_cast<uint8_t*>(outgoing_p2p_buffer.get()) + getOffsetBuf(type, sequence_num),
                     connection_params.max_msg_sizes[type] - sizeof(uint64_t));
         std::memcpy(const_cast<uint8_t*>(incoming_p2p_buffer.get()) + getOffsetSeqNum(type, sequence_num),
                     const_cast<uint8_t*>(outgoing_p2p_buffer.get()) + getOffsetSeqNum(type, sequence_num),
                     sizeof(uint64_t));
+        */
         start = print_time(start,"LOCAL");
     } else {
         dbg_default_trace("Sending {} to node {}, about to call post_remote_write. getOffsetBuf() is {}, getOffsetSeqNum() is {}",
