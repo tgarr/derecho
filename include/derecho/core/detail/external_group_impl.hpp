@@ -1,5 +1,6 @@
 #include "../external_group.hpp"
 #include "version_code.hpp"
+#include <chrono>
 
 namespace derecho {
 
@@ -346,16 +347,27 @@ sst::P2PBufferHandle ExternalGroupClient<ReplicatedTypes...>::get_sendbuffer_ptr
     return *buffer;
 }
 
+static std::chrono::high_resolution_clock::time_point print_time(std::chrono::high_resolution_clock::time_point &start,const char *tag){
+    auto elapsed = std::chrono::high_resolution_clock::now() - start;
+    auto latency = std::chrono::duration_cast<std::chrono::microseconds>(elapsed);
+    std::cerr << tag << " " << latency.count() << std::endl;
+    return std::chrono::high_resolution_clock::now();
+}
+
 template <typename... ReplicatedTypes>
 void ExternalGroupClient<ReplicatedTypes...>::send_p2p_message(node_id_t dest_id, subgroup_id_t dest_subgroup_id, uint64_t sequence_num, std::weak_ptr<rpc::AbstractPendingResults> pending_results_handle) {
+    auto start = std::chrono::high_resolution_clock::now();
     try {
         p2p_connections->send(dest_id, sst::MESSAGE_TYPE::P2P_REQUEST, sequence_num);
+        start = print_time(start,"SEND");
     } catch(std::out_of_range& map_error) {
         throw node_removed_from_group_exception(dest_id);
     }
     std::shared_ptr<AbstractPendingResults> pending_results = pending_results_handle.lock();
+    start = print_time(start,"LOCK");
     if(pending_results) {
         pending_results->fulfill_map({dest_id});
+        start = print_time(start,"FULFILL");
         fulfilled_pending_results[dest_subgroup_id].push_back(pending_results_handle);
     }
 }

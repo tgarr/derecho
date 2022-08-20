@@ -127,11 +127,11 @@ auto Replicated<T>::p2p_send(node_id_t dest_node, Args&&... args) const {
                     }
                 },
                 std::forward<Args>(args)...);
-        start = print_time(start,"FIRST");
+        //start = print_time(start,"FIRST");
         group_rpc_manager.send_p2p_message(dest_node, subgroup_id, message_seq_num, return_pair.pending);
-        start = print_time(start,"SECOND");
+        //start = print_time(start,"SECOND");
         auto ret = std::move(*return_pair.results);
-        start = print_time(start,"THIRD");
+        //start = print_time(start,"THIRD");
         return ret;
     } else {
         throw empty_reference_exception{"Attempted to use an empty Replicated<T>"};
