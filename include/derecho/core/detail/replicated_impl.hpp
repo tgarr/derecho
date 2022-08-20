@@ -94,13 +94,6 @@ Replicated<T>::~Replicated() {
     }
 }
 
-static std::chrono::high_resolution_clock::time_point print_time(std::chrono::high_resolution_clock::time_point &start,const char *tag){
-    auto elapsed = std::chrono::high_resolution_clock::now() - start;
-    auto latency = std::chrono::duration_cast<std::chrono::microseconds>(elapsed);
-    std::cerr << tag << " " << latency.count() << std::endl;
-    return std::chrono::high_resolution_clock::now();
-}
-
 template <typename T>
 template <rpc::FunctionTag tag, typename... Args>
 auto Replicated<T>::p2p_send(node_id_t dest_node, Args&&... args) const {
@@ -127,12 +120,8 @@ auto Replicated<T>::p2p_send(node_id_t dest_node, Args&&... args) const {
                     }
                 },
                 std::forward<Args>(args)...);
-        //start = print_time(start,"FIRST");
         group_rpc_manager.send_p2p_message(dest_node, subgroup_id, message_seq_num, return_pair.pending);
-        //start = print_time(start,"SECOND");
-        auto ret = std::move(*return_pair.results);
-        //start = print_time(start,"THIRD");
-        return ret;
+        return std::move(*return_pair.results);
     } else {
         throw empty_reference_exception{"Attempted to use an empty Replicated<T>"};
     }
