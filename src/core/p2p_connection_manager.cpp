@@ -140,7 +140,7 @@ std::optional<P2PBufferHandle> P2PConnectionManager::get_sendbuffer_ptr(node_id_
     throw std::out_of_range(std::string(__PRETTY_FUNCTION__) + " cannot find a connection to node:" + std::to_string(node_id));
 }
 
-std::chrono::high_resolution_clock::time_point print_time2(std::chrono::                       high_resolution_clock::time_point &start,const char *tag){
+std::chrono::high_resolution_clock::time_point print_time(std::chrono::                       high_resolution_clock::time_point &start,const char *tag){
     auto elapsed = std::chrono::high_resolution_clock::now() - start;
     auto latency = std::chrono::duration_cast<std::chrono::microseconds>(elapsed);
     std::cerr << tag << " " << latency.count() << std::endl;
