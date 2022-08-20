@@ -140,19 +140,10 @@ std::optional<P2PBufferHandle> P2PConnectionManager::get_sendbuffer_ptr(node_id_
     throw std::out_of_range(std::string(__PRETTY_FUNCTION__) + " cannot find a connection to node:" + std::to_string(node_id));
 }
 
-std::chrono::high_resolution_clock::time_point print_time(std::chrono::                       high_resolution_clock::time_point &start,const char *tag){
-    auto elapsed = std::chrono::high_resolution_clock::now() - start;
-    auto latency = std::chrono::duration_cast<std::chrono::microseconds>(elapsed);
-    std::cerr << tag << " " << latency.count() << std::endl;
-    return std::chrono::high_resolution_clock::now();
-}
-
 void P2PConnectionManager::send(node_id_t node_id, MESSAGE_TYPE type, uint64_t sequence_num) {
     auto start = std::chrono::high_resolution_clock::now();
     std::lock_guard<std::mutex> connection_lock(p2p_connections[node_id].first);
-    start = print_time(start,"CONN_LOCK");
     p2p_connections[node_id].second->send(type, sequence_num);
-    start = print_time(start,"CONN_SEND");
     if(node_id != my_node_id && p2p_connections[node_id].second) {
         p2p_connections[node_id].second->num_rdma_writes++;
     }

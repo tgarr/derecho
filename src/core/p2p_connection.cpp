@@ -98,7 +98,15 @@ std::optional<P2PBufferHandle> P2PConnection::get_sendbuffer_ptr(MESSAGE_TYPE ty
     return std::nullopt;
 }
 
+std::chrono::high_resolution_clock::time_point print_time(std::chrono::                       high_resolution_clock::time_point &start,const char *tag){
+    auto elapsed = std::chrono::high_resolution_clock::now() - start;
+    auto latency = std::chrono::duration_cast<std::chrono::microseconds>(elapsed);
+    std::cerr << tag << " " << latency.count() << std::endl;
+    return std::chrono::high_resolution_clock::now();
+}
+
 void P2PConnection::send(MESSAGE_TYPE type, uint64_t sequence_num) {
+    auto start = std::chrono::high_resolution_clock::now();
     if(remote_id == my_node_id) {
         // there's no reason why memcpy shouldn't also copy guard and data separately
         std::memcpy(const_cast<uint8_t*>(incoming_p2p_buffer.get()) + getOffsetBuf(type, sequence_num),
@@ -107,6 +115,7 @@ void P2PConnection::send(MESSAGE_TYPE type, uint64_t sequence_num) {
         std::memcpy(const_cast<uint8_t*>(incoming_p2p_buffer.get()) + getOffsetSeqNum(type, sequence_num),
                     const_cast<uint8_t*>(outgoing_p2p_buffer.get()) + getOffsetSeqNum(type, sequence_num),
                     sizeof(uint64_t));
+        start = print_time(start,"LOCAL");
     } else {
         dbg_default_trace("Sending {} to node {}, about to call post_remote_write. getOffsetBuf() is {}, getOffsetSeqNum() is {}",
                           type, remote_id, getOffsetBuf(type, sequence_num), getOffsetSeqNum(type, sequence_num));
@@ -117,6 +126,7 @@ void P2PConnection::send(MESSAGE_TYPE type, uint64_t sequence_num) {
                                connection_params.max_msg_sizes[type] - sizeof(uint64_t));
         res->post_remote_write(getOffsetSeqNum(type, sequence_num),
                                sizeof(uint64_t));
+        start = print_time(start,"REMOTE");
     }
 }
 
