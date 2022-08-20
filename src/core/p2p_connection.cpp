@@ -36,8 +36,7 @@ P2PConnection::P2PConnection(uint32_t my_node_id, uint32_t remote_id, uint64_t p
         outgoing_seq_nums_map.try_emplace(type, 0);
     }
 
-    //if(my_node_id != remote_id) {
-    if(true) {
+    if(my_node_id != remote_id) {
 #ifdef USE_VERBS_API
         res = std::make_unique<resources>(remote_id, const_cast<uint8_t*>(incoming_p2p_buffer.get()),
                                           const_cast<uint8_t*>(outgoing_p2p_buffer.get()),
@@ -47,6 +46,11 @@ P2PConnection::P2PConnection(uint32_t my_node_id, uint32_t remote_id, uint64_t p
                                           const_cast<uint8_t*>(outgoing_p2p_buffer.get()),
                                           p2p_buf_size, p2p_buf_size, my_node_id > remote_id);
 #endif
+    } 
+    else {
+        res = std::make_unique<resources>(remote_id, const_cast<uint8_t*>(incoming_p2p_buffer.get()),
+                                          const_cast<uint8_t*>(outgoing_p2p_buffer.get()),
+                                          p2p_buf_size, p2p_buf_size);
     }
 }
 
