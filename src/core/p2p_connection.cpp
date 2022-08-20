@@ -36,7 +36,8 @@ P2PConnection::P2PConnection(uint32_t my_node_id, uint32_t remote_id, uint64_t p
         outgoing_seq_nums_map.try_emplace(type, 0);
     }
 
-    if(my_node_id != remote_id) {
+    //if(my_node_id != remote_id) {
+    if(true) {
 #ifdef USE_VERBS_API
         res = std::make_unique<resources>(remote_id, const_cast<uint8_t*>(incoming_p2p_buffer.get()),
                                           const_cast<uint8_t*>(outgoing_p2p_buffer.get()),
@@ -107,7 +108,8 @@ std::chrono::high_resolution_clock::time_point print_time(std::chrono::         
 
 void P2PConnection::send(MESSAGE_TYPE type, uint64_t sequence_num) {
     auto start = std::chrono::high_resolution_clock::now();
-    if(remote_id == my_node_id && (type != MESSAGE_TYPE::P2P_REQUEST)) {
+    //if(remote_id == my_node_id) {
+    if(false){
         // there's no reason why memcpy shouldn't also copy guard and data separately
         std::memcpy(const_cast<uint8_t*>(incoming_p2p_buffer.get()) + getOffsetBuf(type, sequence_num),
                     const_cast<uint8_t*>(outgoing_p2p_buffer.get()) + getOffsetBuf(type, sequence_num),
