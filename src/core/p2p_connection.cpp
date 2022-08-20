@@ -107,7 +107,8 @@ std::chrono::high_resolution_clock::time_point print_time(std::chrono::         
 
 void P2PConnection::send(MESSAGE_TYPE type, uint64_t sequence_num) {
     auto start = std::chrono::high_resolution_clock::now();
-    if(remote_id == my_node_id) {
+    //if(remote_id == my_node_id) {
+    if(false){
         // there's no reason why memcpy shouldn't also copy guard and data separately
         std::memcpy(const_cast<uint8_t*>(incoming_p2p_buffer.get()) + getOffsetBuf(type, sequence_num),
                     const_cast<uint8_t*>(outgoing_p2p_buffer.get()) + getOffsetBuf(type, sequence_num),
