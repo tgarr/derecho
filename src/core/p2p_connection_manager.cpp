@@ -141,7 +141,6 @@ std::optional<P2PBufferHandle> P2PConnectionManager::get_sendbuffer_ptr(node_id_
 }
 
 void P2PConnectionManager::send(node_id_t node_id, MESSAGE_TYPE type, uint64_t sequence_num) {
-    auto start = std::chrono::high_resolution_clock::now();
     std::lock_guard<std::mutex> connection_lock(p2p_connections[node_id].first);
     p2p_connections[node_id].second->send(type, sequence_num);
     if(node_id != my_node_id && p2p_connections[node_id].second) {
