@@ -44,7 +44,7 @@ P2PConnection::P2PConnection(uint32_t my_node_id, uint32_t remote_id, uint64_t p
 #else
     res = std::make_unique<resources>(remote_id, const_cast<uint8_t*>(incoming_p2p_buffer.get()),
                                           const_cast<uint8_t*>(outgoing_p2p_buffer.get()),
-                                          p2p_buf_size, p2p_buf_size, my_node_id >= remote_id);
+                                          p2p_buf_size, p2p_buf_size, my_node_id > remote_id);
 #endif
 }
 
