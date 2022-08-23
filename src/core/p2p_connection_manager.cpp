@@ -39,9 +39,6 @@ P2PConnectionManager::P2PConnectionManager(const P2PParams params)
     }
     p2p_buf_size += sizeof(bool);
 
-    p2p_connections[my_node_id].second = std::make_unique<P2PConnection>(my_node_id, my_node_id, p2p_buf_size, request_params);
-    active_p2p_connections[my_node_id] = true;
-
     // external client doesn't need failure checking
     if(!params.is_external) {
         timeout_thread = std::thread(&P2PConnectionManager::check_failures_loop, this);
@@ -142,7 +139,7 @@ std::optional<P2PBufferHandle> P2PConnectionManager::get_sendbuffer_ptr(node_id_
 void P2PConnectionManager::send(node_id_t node_id, MESSAGE_TYPE type, uint64_t sequence_num) {
     std::lock_guard<std::mutex> connection_lock(p2p_connections[node_id].first);
     p2p_connections[node_id].second->send(type, sequence_num);
-    if(node_id != my_node_id && p2p_connections[node_id].second) {
+    if(p2p_connections[node_id].second) {
         p2p_connections[node_id].second->num_rdma_writes++;
     }
 }
@@ -178,7 +175,7 @@ void P2PConnectionManager::check_failures_loop() {
             if(!p2p_connections[node_id].second) continue;
 
             // checks every second regardless of num_rdma_writes
-            if(node_id == my_node_id || (p2p_connections[node_id].second->num_rdma_writes < 1000 && tick_count < one_second_count)) {
+            if(p2p_connections[node_id].second->num_rdma_writes < 1000 && tick_count < one_second_count) {
                 continue;
             }
             p2p_connections[node_id].second->num_rdma_writes = 0;
