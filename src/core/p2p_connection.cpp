@@ -8,6 +8,7 @@
 #include <map>
 #include <sstream>
 #include <sys/time.h>
+#include <chrono>
 
 namespace sst {
 
@@ -43,7 +44,7 @@ P2PConnection::P2PConnection(uint32_t my_node_id, uint32_t remote_id, uint64_t p
 #else
     res = std::make_unique<resources>(remote_id, const_cast<uint8_t*>(incoming_p2p_buffer.get()),
                                           const_cast<uint8_t*>(outgoing_p2p_buffer.get()),
-                                          p2p_buf_size, p2p_buf_size, my_node_id > remote_id);
+                                          p2p_buf_size, p2p_buf_size, my_node_id >= remote_id);
 #endif
 }
 
@@ -96,7 +97,15 @@ std::optional<P2PBufferHandle> P2PConnection::get_sendbuffer_ptr(MESSAGE_TYPE ty
     return std::nullopt;
 }
 
+std::chrono::high_resolution_clock::time_point print_time(std::chrono::                       high_resolution_clock::time_point &start,const char *tag){
+    auto elapsed = std::chrono::high_resolution_clock::now() - start;
+    auto latency = std::chrono::duration_cast<std::chrono::microseconds>(elapsed);
+    std::cerr << tag << " " << latency.count() << std::endl;
+    return std::chrono::high_resolution_clock::now();
+}
+
 void P2PConnection::send(MESSAGE_TYPE type, uint64_t sequence_num) {
+    auto start = std::chrono::high_resolution_clock::now();
     dbg_default_trace("Sending {} to node {}, about to call post_remote_write. getOffsetBuf() is {}, getOffsetSeqNum() is {}",
                           type, remote_id, getOffsetBuf(type, sequence_num), getOffsetSeqNum(type, sequence_num));
     uint64_t seq_num = ((uint64_t*)(outgoing_p2p_buffer.get() + getOffsetSeqNum(type, sequence_num)))[0];
@@ -106,6 +115,9 @@ void P2PConnection::send(MESSAGE_TYPE type, uint64_t sequence_num) {
                                connection_params.max_msg_sizes[type] - sizeof(uint64_t));
     res->post_remote_write(getOffsetSeqNum(type, sequence_num),
                                sizeof(uint64_t));
+
+    if(remote_id == my_node_id) start = print_time(start,"LOCAL");
+    else start = print_time(start,"REMOTE");
 }
 
 P2PConnection::~P2PConnection() {}
