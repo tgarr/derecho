@@ -99,6 +99,7 @@ public:
 
     template <class T>
     void exchange(node_id_t node_id, T local, T& remote) {
+        if(node_id == my_id) return;
         std::lock_guard<std::mutex> lock(sockets_mutex);
         const auto it = sockets.find(node_id);
         assert(it != sockets.end());
