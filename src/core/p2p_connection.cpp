@@ -90,9 +90,14 @@ std::optional<P2PBufferHandle> P2PConnection::get_sendbuffer_ptr(MESSAGE_TYPE ty
         uint64_t next_seq_num = ++outgoing_seq_nums_map[type];
         // C-style cast: reinterpret the bytes of the buffer as a uint64_t, and also cast away volatile
         ((uint64_t&)outgoing_p2p_buffer[getOffsetSeqNum(type, cur_seq_num)]) = next_seq_num;
-        return P2PBufferHandle{const_cast<uint8_t*>(outgoing_p2p_buffer.get())
-                                       + getOffsetBuf(type, cur_seq_num),
-                               cur_seq_num};
+        
+        // if sending data locally, data is written directly to the incoming buffer in order to avoid copying
+        if(remote_id == my_node_id)
+            return P2PBufferHandle{const_cast<uint8_t*>(incoming_p2p_buffer.get()) 
+                + getOffsetBuf(type, cur_seq_num), cur_seq_num};
+        else
+            return P2PBufferHandle{const_cast<uint8_t*>(outgoing_p2p_buffer.get()) 
+                + getOffsetBuf(type, cur_seq_num), cur_seq_num};
     }
     dbg_default_trace("P2PConnection: Send buffer was full: incoming_seq_nums[REPLY] = {}, but outgoing_seq_nums[REQUEST] = {}", incoming_seq_nums_map[MESSAGE_TYPE::P2P_REPLY], outgoing_seq_nums_map[MESSAGE_TYPE::P2P_REQUEST]);
     return std::nullopt;
@@ -100,10 +105,7 @@ std::optional<P2PBufferHandle> P2PConnection::get_sendbuffer_ptr(MESSAGE_TYPE ty
 
 void P2PConnection::send(MESSAGE_TYPE type, uint64_t sequence_num) {
     if(remote_id == my_node_id) {
-        // there's no reason why memcpy shouldn't also copy guard and data separately
-        std::memcpy(const_cast<uint8_t*>(incoming_p2p_buffer.get()) + getOffsetBuf(type, sequence_num),
-                    const_cast<uint8_t*>(outgoing_p2p_buffer.get()) + getOffsetBuf(type, sequence_num),
-                    connection_params.max_msg_sizes[type] - sizeof(uint64_t));
+        // copy only guard, since data is already in place
         std::memcpy(const_cast<uint8_t*>(incoming_p2p_buffer.get()) + getOffsetSeqNum(type, sequence_num),
                     const_cast<uint8_t*>(outgoing_p2p_buffer.get()) + getOffsetSeqNum(type, sequence_num),
                     sizeof(uint64_t));
