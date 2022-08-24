@@ -28,12 +28,19 @@ std::ostream& operator<<(std::ostream& os, MESSAGE_TYPE mt) {
 
 P2PConnection::P2PConnection(uint32_t my_node_id, uint32_t remote_id, uint64_t p2p_buf_size, const ConnectionParams& connection_params)
         : my_node_id(my_node_id), remote_id(remote_id), connection_params(connection_params) {
-    incoming_p2p_buffer = std::make_unique<volatile uint8_t[]>(p2p_buf_size);
-    outgoing_p2p_buffer = std::make_unique<volatile uint8_t[]>(p2p_buf_size);
+    volatile uint8_t* ibuf = static_cast<volatile uint8_t*>(malloc(p2p_buf_size));
+    volatile uint8_t* obuf = static_cast<volatile uint8_t*>(malloc(p2p_buf_size));
+    incoming_p2p_buffer = std::unique_ptr<volatile uint8_t[]>(ibuf);
+    outgoing_p2p_buffer = std::unique_ptr<volatile uint8_t[]>(obuf);
 
     for(auto type : p2p_message_types) {
         incoming_seq_nums_map.try_emplace(type, 0);
         outgoing_seq_nums_map.try_emplace(type, 0);
+        // only zero out the sequential numbers
+        for (uint64_t i = 0; i<connection_params.window_sizes[type] ; i++) {
+            (uint64_t&)incoming_p2p_buffer[getOffsetSeqNum(type,i)] = 0;
+            (uint64_t&)outgoing_p2p_buffer[getOffsetSeqNum(type,i)] = 0;
+        }
     }
 
     if(my_node_id != remote_id) {
