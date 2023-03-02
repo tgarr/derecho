@@ -294,6 +294,16 @@ const T& Replicated<T>::get_ref() const {
 }
 
 template <typename T>
+void Replicated<T>::oob_remote_write(const node_id_t& remote_node, const struct iovec* iov, int iovcnt, uint64_t remote_dest_addr, uint64_t rkey, size_t size) {
+    group_rpc_manager.oob_remote_write(remote_node,iov,iovcnt,remote_dest_addr,rkey,size);
+}
+
+template <typename T>
+void Replicated<T>::oob_remote_read(const node_id_t& remote_node, const struct iovec* iov, int iovcnt, uint64_t remote_src_addr, uint64_t rkey, size_t size) {
+    group_rpc_manager.oob_remote_read(remote_node,iov,iovcnt,remote_src_addr,rkey,size);
+}
+
+template <typename T>
 const uint64_t Replicated<T>::compute_global_stability_frontier() {
     return group_rpc_manager.view_manager.compute_global_stability_frontier(subgroup_id);
 }

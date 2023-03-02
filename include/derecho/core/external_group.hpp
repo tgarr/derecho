@@ -282,6 +282,29 @@ public:
      */
     template <typename SubgroupType>
     std::vector<std::vector<node_id_t>> get_subgroup_members(uint32_t subgroup_index = 0) const;
+
+    /**
+     * Get Out-of-band memory region's remote access key
+     * @param addr      The address of the memory region
+     * @return          remote access key of the memory region
+     * @throw           derecho::derecho_exception if address does not fall in the memory region.
+     */
+    uint64_t get_oob_memory_key(void* addr);
+
+    /**
+     * Register Out-of-band memory region
+     * @param addr      The address of the memory region
+     * @param size      The size in bytes of the memory region
+     * @throw           derecho::derecho_exception on failure
+     */
+    void register_oob_memory(void* addr, size_t size);
+
+    /**
+     * Unregister Out-of-band memory region
+     * @param addr      The address of the memory region, which has been used for register_oob_memory
+     * @throw           derecho::derecho_exception on failure
+     */
+    void unregister_oob_memory(void* addr);
 };
 }  // namespace derecho
 

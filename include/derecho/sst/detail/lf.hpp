@@ -16,6 +16,10 @@
 #include <rdma/fabric.h>
 #include <rdma/fi_errno.h>
 #include <thread>
+#include <mutex>
+#include <shared_mutex>
+#include <map>
+#include <tuple>
 
 #ifndef LF_VERSION
 #define LF_VERSION FI_VERSION(1, 5)
@@ -95,6 +99,114 @@ public:
     struct fid_eq* eq;
 
     /**
+     * Out-of-Band memory and send management
+     */
+private:
+    struct oob_mr_t {
+        void*           addr;
+        size_t          size;
+        struct  fid_mr* mr;
+    };
+    static std::shared_mutex  oob_mrs_mutex;
+    static std::map<uint64_t,struct oob_mr_t> oob_mrs;
+    /**
+     * get the descriptor of the corresponding oob memory region
+     * Important: it assumes shared lock on oob_mrs_mutex.
+     * If iov does not fall into an oob memory region, it fails with nullptr.
+     *
+     * @param iov
+     *
+     * @return the descriptor of type void*, or nullptr in case of failure.
+     */
+    static void* get_oob_mr_desc(const struct iovec& iov);
+
+public:
+    /**
+     * get the descriptor of the corresponding oob memory region
+     * Important: it assumes shared lock on oob_mrs_mutex.
+     * If iov does not fall into an oob memory region, it fails with nullptr.
+     *
+     * @param iov
+     *
+     * @return the descriptor of type void*, or nullptr in case of failure.
+     * @throw   derecho::derecho_exception if not found.
+     */
+    static void* get_oob_mr_desc(void* addr);
+
+    /**
+     * Get the key of the corresponding oob memory region for remote access.
+     *
+     * @param addr      The address of registered oob memory
+     *
+     * @return  the remote access key,
+     * @throw   derecho::derecho_exception if not found.
+     */
+    static uint64_t get_oob_mr_key(void* addr);
+    
+    /**
+     * Register oob memory
+     * @param addr  the address of the OOB memory
+     * @param size  the size of the OOB memory
+     *
+     * @throws derecho_exception at failure.
+     */
+    static void register_oob_memory(void* addr, size_t size);
+
+    /**
+     * Unregister oob memory
+     * @param addr the address of OOB memory
+     *
+     * @throws derecho_exception at failure.
+     */
+    static void unregister_oob_memory(void* addr);
+
+private:
+#define OOB_OP_READ     0x0
+#define OOB_OP_WRITE    0x1
+    /*
+     * oob operation
+     * @param op                The operation, current we support OOB_OP_READ and OOB_OP_WRITE.
+     * @param iov               The gather memory vector, the total size of the source should not go beyond 'size'.
+     * @param iovcnt            The length of the vector.
+     * @param remote_dest_addr  The remote address for receiving this message
+     * @param rkey              The access key for the remote memory.
+     * @param size              The size of the remote buffer
+     *
+     * @throws derecho_exception at failure.
+     */
+    void oob_remote_op(uint32_t op, const struct iovec* iov, int iovcnt, void* remote_dest_addr, uint64_t rkey, size_t size);
+
+public:
+    /*
+     * oob write
+     * @param iov               The gather memory vector, the total size of the source should not go beyond 'size'.
+     * @param iovcnt            The length of the vector.
+     * @param remote_dest_addr  The remote address for receiving this message
+     * @param rkey              The access key for the remote memory.
+     * @param size              The size of the remote buffer
+     *
+     * @throws derecho_exception at failure.
+     */
+    void oob_remote_write(const struct iovec* iov, int iovcnt, void* remote_dest_addr, uint64_t rkey, size_t size);
+
+    /*
+     * oob read
+     * @param iov               The scatter memory vector, the total size of the source should not go beyond 'size'.
+     * @param iovcnt            The length of the vector.
+     * @param remote_src_addr   The remote address for receiving this message
+     * @param rkey              The access key for the remote memory.
+     * @param size              The size of the remote buffer
+     *
+     * @throws derecho_exception at failure.
+     */
+    void oob_remote_read(const struct iovec* iov, int iovcnt, void* remote_src_addr, uint64_t rkey, size_t size);
+
+    /*
+     * release singleton resources
+     */
+    static void global_release();
+
+    /**
      * Constructor
      * Initializes the resources. Registers write_addr and read_addr as the read
      * and write buffers and connects a queue pair with the specified remote node.
@@ -149,6 +261,7 @@ public:
     void post_remote_write_with_completion(lf_sender_ctxt* ctxt, const long long int size);
     /** Post an RDMA write at an offset into remote memory. */
     void post_remote_write_with_completion(lf_sender_ctxt* ctxt, const long long int offset, const long long int size);
+
 };
 
 /**
@@ -215,7 +328,9 @@ void filter_external_to(const std::vector<node_id_t>& live_nodes_list);
 void lf_initialize(const std::map<uint32_t, std::pair<ip_addr_t, uint16_t>>& internal_ip_addrs_and_ports,
                    const std::map<uint32_t, std::pair<ip_addr_t, uint16_t>>& external_ip_addrs_and_ports,
                    uint32_t node_id);
-/** Polls for completion of a single posted remote write. */
+/** Polls for completion of a single posted remote write. 
+ * @return a pair: <completion_entry_index,<remote_id,result(1/0)>>
+ */
 std::pair<uint32_t, std::pair<int32_t, int32_t>> lf_poll_completion();
 /** Shutdown the polling thread. */
 void shutdown_polling_thread();

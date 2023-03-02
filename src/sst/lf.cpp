@@ -12,6 +12,7 @@
 #include "derecho/sst/detail/sst_impl.hpp"
 #include "derecho/tcp/tcp.hpp"
 #include "derecho/utils/logger.hpp"
+#include "derecho/core/derecho_exception.hpp"
 
 #include <arpa/inet.h>
 #include <byteswap.h>
@@ -162,6 +163,19 @@ static void load_configuration() {
     // tx_depth
     g_ctxt.hints->tx_attr->size = derecho::Conf::get()->getInt32(CONF_RDMA_TX_DEPTH);
     g_ctxt.hints->rx_attr->size = derecho::Conf::get()->getInt32(CONF_RDMA_RX_DEPTH);
+}
+
+std::shared_mutex _resources::oob_mrs_mutex;
+std::map<uint64_t,struct _resources::oob_mr_t> _resources::oob_mrs;
+
+void _resources::global_release() {
+    std::unique_lock wr_lck(_resources::oob_mrs_mutex);
+    for (auto& oob_mr:_resources::oob_mrs) {
+        fail_if_nonzero_retry_on_eagain("close oob memory region", REPORT_ON_FAILURE,
+                                        fi_close, &oob_mr.second.mr->fid);
+    }
+    _resources::oob_mrs.clear();
+    wr_lck.unlock();
 }
 
 int _resources::init_endpoint(struct fi_info* fi) {
@@ -453,6 +467,223 @@ int _resources::post_remote_send(
     // fflush(stdout);
     // #endif//!NDEBUG
     return ret;
+}
+
+void _resources::register_oob_memory(void* addr, size_t size) {
+    // register it with the domain
+    struct fid_mr* oob_mr;
+    int ret = 
+    fail_if_nonzero_retry_on_eagain("register memory buffer for write", REPORT_ON_FAILURE,
+                                    fi_mr_reg, g_ctxt.domain, addr, size,
+                                    FI_SEND | FI_RECV | FI_READ | FI_WRITE | FI_REMOTE_READ | FI_REMOTE_WRITE,
+                                    0, 0, 0, &oob_mr, nullptr);
+    if (ret != 0) {
+        throw derecho::derecho_exception(std::string("fi_mr_reg() on oob memory failed with return value:") + std::to_string(ret));
+    }
+
+    // register
+    std::unique_lock lck(oob_mrs_mutex);
+    struct oob_mr_t mr;
+    mr.addr = addr;
+    mr.size = size;
+    mr.mr = oob_mr;
+    oob_mrs.emplace(reinterpret_cast<uint64_t>(addr),mr);
+
+    dbg_default_warn("OOB memory registered with \n"
+                      "\taddr = {:p}\n"
+                      "\tsize = {:x}\n"
+                      "\tdesc = {:x}\n"
+                      "\trkey = {:x}\n",
+                      addr,size,reinterpret_cast<uint64_t>(fi_mr_desc(oob_mr)),fi_mr_key(oob_mr));
+}
+
+void _resources::unregister_oob_memory(void* addr) {
+    std::shared_lock rd_lck(oob_mrs_mutex);
+    if (oob_mrs.find(reinterpret_cast<uint64_t>(addr)) == oob_mrs.end()) {
+        throw derecho::derecho_exception(std::string("oob memory region@") + std::to_string(reinterpret_cast<uint64_t>(addr)) + " is not found.");
+    }
+    rd_lck.unlock();
+    std::unique_lock wr_lock(oob_mrs_mutex);
+    struct fid_mr* oob_mr = oob_mrs.at(reinterpret_cast<uint64_t>(addr)).mr;
+    oob_mrs.erase(reinterpret_cast<uint64_t>(addr));
+    wr_lock.unlock();
+    fail_if_nonzero_retry_on_eagain("unregister write mr", REPORT_ON_FAILURE,
+                                    fi_close, &oob_mr->fid);
+}
+
+void* _resources::get_oob_mr_desc(const struct iovec& iov) {
+    for (const auto& oob_mr:oob_mrs) {
+        if (reinterpret_cast<uint64_t>(iov.iov_base) >= oob_mr.first &&
+            (reinterpret_cast<uint64_t>(iov.iov_base) + static_cast<uint64_t>(iov.iov_len)) <= 
+            (reinterpret_cast<uint64_t>(oob_mr.second.addr) + static_cast<uint64_t>(oob_mr.second.size))) {
+            return fi_mr_desc(oob_mr.second.mr);
+        }
+    }
+    throw derecho::derecho_exception("get_oob_mr_desc():address does not fall in memory region.");
+}
+
+void* _resources::get_oob_mr_desc(void* addr) {
+    std::lock_guard rd_lck(oob_mrs_mutex);
+    struct iovec iov;
+    iov.iov_base = addr;
+    iov.iov_len = 1;
+    return get_oob_mr_desc(iov);
+}
+
+uint64_t _resources::get_oob_mr_key(void* addr) {
+    std::lock_guard rd_lck(oob_mrs_mutex);
+    for (const auto& oob_mr:oob_mrs) {
+        if ((reinterpret_cast<uint64_t>(addr) >= reinterpret_cast<uint64_t>(oob_mr.second.addr)) &&
+            (reinterpret_cast<uint64_t>(addr) <  reinterpret_cast<uint64_t>(oob_mr.second.addr) + reinterpret_cast<uint64_t>(oob_mr.second.size))) {
+            return fi_mr_key(oob_mr.second.mr);
+        }
+    }
+    throw derecho::derecho_exception("get_oob_mr_key():address does not fall in memory region");
+}
+
+void _resources::oob_remote_op(uint32_t op, const struct iovec* iov, int iovcnt, void* remote_dest_addr, uint64_t rkey, size_t size) {
+    std::shared_lock rd_lck(oob_mrs_mutex);
+    // STEP 1: check if io vector is valid
+    size_t iov_tot_sz = 0;
+    void* desc[iovcnt];
+    for (int i=0;i<iovcnt;i++) {
+        desc[i] = get_oob_mr_desc(iov[i]);
+        if (!desc[i]) {
+            throw derecho::derecho_exception("oob_remote_write() see invalid iovec, entry:" + std::to_string(i));
+        }
+        iov_tot_sz += iov[i].iov_len;
+    }
+    if (iov_tot_sz > size) {
+        throw derecho::derecho_exception("oob_remote_write(): remote buffer is smaller than data.");
+    }
+
+    // STEP 2: do one-sided RDMA transfer
+    struct fi_rma_iov rma_iov;
+    struct fi_msg_rma msg;
+
+    rma_iov.addr = ((LF_USE_VADDR) ? reinterpret_cast<uint64_t>(remote_dest_addr) : 0);
+    rma_iov.len = size;
+    rma_iov.key = rkey;
+
+    msg.msg_iov = iov;
+    msg.iov_count = iovcnt;
+    msg.desc = desc;
+    msg.addr = 0; // not used for a connection endpoint
+    msg.rma_iov = &rma_iov;
+    msg.rma_iov_count = 1;
+    msg.data = 0l; // not used
+    
+    // set up completion entry.
+    const auto tid = std::this_thread::get_id();
+    uint32_t ce_idx = util::polling_data.get_index(tid);
+    util::polling_data.set_waiting(tid);
+    lf_sender_ctxt sctxt;
+    sctxt.set_remote_id(remote_id);
+    sctxt.set_ce_idx(ce_idx);
+    msg.context = (void*)&sctxt;
+    dbg_default_trace("{}: op = {:d}, msg.context = {:p}",__func__,op,static_cast<void*>(&sctxt));
+
+    dbg_default_warn("{}: op = {:d}, msg.context = {:p}\n"
+                     "\tmsg.msg_iov.iov_base     = {:p}\n"
+                     "\tmsg.msg_iov.iov_len      = {:x}\n"
+                     "\tmsg.iov_count            = {}\n"
+                     "\tmsg.desc[0]              = {:x}\n"
+                     "\tmsg.rma_iov->addr        = {:x}\n"
+                     "\tmsg.rma_iov->len         = {:x}\n"
+                     "\tmsg.rma_iov->key         = {:x}\n"
+                     "\tmsg.rma_iov_count        = {}\n"
+                     "\tmsg.data                 = {}\n"
+                     ,
+                     __func__,op,static_cast<void*>(&sctxt),
+                     msg.msg_iov->iov_base,
+                     msg.msg_iov->iov_len,
+                     msg.iov_count,
+                     reinterpret_cast<uint64_t>(msg.desc[0]),
+                     msg.rma_iov->addr,
+                     msg.rma_iov->len,
+                     msg.rma_iov->key,
+                     msg.rma_iov_count,
+                     msg.data
+            );
+
+    int ret = -1;
+    if (op == OOB_OP_WRITE) {
+        // STEP 3: According to the IBTA Spec, we need to put a barrier (atomic operation) after the data has been written.
+        // Cited from IBTA spec o9-20:
+        // """
+        // An application shall not depend on the contents of an RDMA WRITE buffer at the responder until one of the
+        // following has occurred:
+        // - Arrival and Completion of the last RDMA WRTIE request packet when used with Immediate data.
+        // - Arrival and completion of a subsequent SEND message.
+        // - Update of a memory element by a subsequent ATOMIC operation.
+        // """
+        // However, SST assumes that the contents will be visible to the responder in the order it appears. The CMU FaRM
+        // uses the same assumption. It sounds plausible but more implementation dependent. We have many other RDMA
+        // implementations too. We need to re-check this later.
+        //
+        // So far, we wait for the completion.
+        ret = retry_on_eagain_unless("fi_writemsg failed.",
+                                     [this](){return remote_failed.load();},
+                                     fi_writemsg,
+                                     this->ep,
+                                     &msg, FI_COMPLETION);
+    } else if (op == OOB_OP_READ) {
+        // STEP 3: According to the IBTA Spec, we need wait for the completion before we can use this data.
+        // Cited from IBTA spec o9-21:
+        // """
+        // An application shall not depend on the contents of an RDMA READ target buffer at the requestor until the completion of the corresponding WQE
+        // """
+        //
+        ret = retry_on_eagain_unless("fi_readmsg failed.",
+                                     [this](){return remote_failed.load();},
+                                     fi_readmsg,
+                                     this->ep,
+                                     &msg, FI_COMPLETION);
+    }
+
+    if (ret != 0) {
+        throw derecho::derecho_exception("oob_remote_op() failed with " + std::to_string(ret));
+    }
+
+    // STEP 4: wait for completion
+    std::optional<std::pair<int32_t, int32_t>> ce;
+    uint64_t        start_time_msec;
+    uint64_t        cur_time_msec;
+    struct timeval  cur_time;
+    gettimeofday(&cur_time, NULL);
+    start_time_msec = (cur_time.tv_sec*1e3)+(cur_time.tv_usec/1e3);
+    uint64_t        poll_cq_timeout_ms = derecho::getConfUInt64(CONF_DERECHO_SST_POLL_CQ_TIMEOUT_MS);
+
+    while (true) {
+        ce = util::polling_data.get_completion_entry(tid);
+        if (ce) {
+            break;
+        }
+        gettimeofday(&cur_time, NULL);
+        cur_time_msec = (cur_time.tv_sec*1e3) + (cur_time.tv_usec/1e3);
+        if ((cur_time_msec - start_time_msec) >= poll_cq_timeout_ms) {
+            //timeout
+            break;
+        }
+    }
+
+    if (!ce) {
+        // timeout or failed.
+        throw derecho::derecho_exception("oob_remote_op() with node:" + std::to_string(remote_id) + " timeout.");
+    }
+
+    auto ce_v = ce.value();
+    if ((ce_v.first != remote_id) || (ce_v.second != 1)) {
+        throw derecho::derecho_exception("oob_remote_op() with node:" + std::to_string(remote_id) + " failed with unknown error.");
+    }
+}
+
+void _resources::oob_remote_write(const struct iovec* iov, int iovcnt, void* remote_dest_addr, uint64_t rkey, size_t size) {
+    oob_remote_op(OOB_OP_WRITE,iov,iovcnt,remote_dest_addr,rkey,size);
+}
+
+void _resources::oob_remote_read(const struct iovec* iov, int iovcnt, void* remote_src_addr, uint64_t rkey, size_t size) {
+    oob_remote_op(OOB_OP_READ, iov,iovcnt,remote_src_addr,rkey,size);
 }
 
 void resources::report_failure() {
@@ -821,7 +1052,10 @@ void shutdown_polling_thread() {
 
 void lf_destroy() {
     shutdown_polling_thread();
+
     // TODO: make sure all resources are destroyed first.
+    _resources::global_release();
+
     if(g_ctxt.pep) {
         fail_if_nonzero_retry_on_eagain("close passive endpoint", REPORT_ON_FAILURE,
                                         fi_close, &g_ctxt.pep->fid);

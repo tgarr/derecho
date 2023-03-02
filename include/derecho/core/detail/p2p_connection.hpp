@@ -97,5 +97,49 @@ public:
      * @param sequence_num The sequence number of the buffer to send.
      */
     void send(MESSAGE_TYPE type, uint64_t sequence_num);
+
+    /**
+     * Get remote access key of a memory region
+     * @param addr      memory region address
+     * @return          remote access key
+     * @throw           derecho::derecho_exception on failure
+     */
+    static uint64_t get_oob_memory_key(void* addr);
+
+    /**
+     * Register Out-of-band memory region
+     * @param addr      The address of the memory region
+     * @param size      The size in bytes of the memory region
+     * @throw           derecho::derecho_exception on failure
+     */
+    static void register_oob_memory(void* addr, size_t size);
+    /**
+     * Unregister Out-of-band memory region
+     * @param addr      The address of the memory region
+     * @throw           derecho::derecho_exception on failure
+     */
+    static void unregister_oob_memory(void* addr);
+    /**
+     * oob write
+     * @param iov
+     * @param iovcnt
+     * @param remote_dest_addr
+     * @param rkey
+     * @param size
+     *
+     * @throws derecho::derecho_exception at failure
+     */
+    void oob_remote_write(const struct iovec* iov, int iovcnt, void* remote_dest_addr, uint64_t rkey, size_t size);
+    /**
+     * oob read
+     * @param iov
+     * @param iovcnt
+     * @param remote_src_addr
+     * @param rkey
+     * @param size
+     *
+     * @throws derecho::derecho_exception at failure
+     */
+    void oob_remote_read(const struct iovec* iov, int iovcnt, void* remote_src_addr, uint64_t rkey, size_t size);
 };
 }  // namespace sst

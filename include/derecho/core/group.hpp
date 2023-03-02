@@ -432,6 +432,30 @@ public:
     /** Waits until all members of the group have called this function. */
     void barrier_sync();
     void debug_print_status() const;
+
+    /**
+     * Register Out-of-band memory region
+     * @param addr      The address of the memory region
+     * @param size      The size in bytes of the memory region
+     *
+     * @throw           derecho::derecho_exception on failure
+     */
+    void register_oob_memory(void* addr, size_t size);
+
+    /**
+     * Get the Out-of-band memory region's remote access key
+     * @param addr      The address of the memory region
+     * @return          The remote access key
+     * @throw           derecho::derecho_exception if the address does not fall in any memory region
+     */
+    uint64_t get_oob_memory_key(void* addr);
+
+    /**
+     * Unregister Out-of-band memory region
+     * @param addr      The address of the memory region, which has been used for register_oob_memory
+     * @throw           derecho::derecho_exception on failure
+     */
+    void unregister_oob_memory(void* addr);
 };
 
 } /* namespace derecho */
