@@ -10,6 +10,7 @@ add_library(core OBJECT
     persistence_manager.cpp
     restart_state.cpp
     rpc_manager.cpp
+    rpc_utils.cpp
     subgroup_functions.cpp
     version_code.cpp
     view.cpp
@@ -19,6 +20,4 @@ target_include_directories(core PRIVATE
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
 )
 # OBJECT libraries are not linked, but this command can be used to declare library dependencies
-target_link_libraries(core spdlog::spdlog)
-
-add_custom_target(format_core clang-format -i *.cpp *.h)
+target_link_libraries(core mutils::mutils mutils::mutils-containers spdlog::spdlog)
